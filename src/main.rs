@@ -2,6 +2,7 @@ mod binance;
 mod snapshot;
 mod stream;
 mod sync;
+mod orderbook;
 
 use anyhow::Result;
 use futures_util::StreamExt;
