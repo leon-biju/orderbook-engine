@@ -39,7 +39,6 @@ async fn main() -> Result<()>{
                     Ok(updates) => {
                         for update in updates {
                             println!("Applying update! U={}, u={}", first_id, final_id);
-                            sync.set_last_update_id(final_id);
                             //todo: apply update to orderbook
                         }
 
