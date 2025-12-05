@@ -26,18 +26,14 @@ impl SyncState {
             self.buffer.push(update);
             return Ok(Vec::new());
         };
-
         //check sync condition U <= lastUpdateId + 1 <= u
         if update.first_update_id <= last_id + 1 && last_id + 1 <= update.final_update_id {
-            //apply buffered data first
-            let mut to_apply = vec![update];
-            self.buffer.sort_by_key(|u| u.first_update_id);
-            let buffered = self.drain_buffer();
+            let mut to_apply = self.drain_buffer();
+            to_apply.push(update);
+            to_apply.sort_by_key(|u| u.first_update_id);
 
-            for buffered_update in buffered {
-                if buffered_update.first_update_id > last_id {
-                    to_apply.push(buffered_update);
-                }
+            if let Some(last) = to_apply.last() {
+                self.set_last_update_id(last.final_update_id);
             }
 
             return Ok(to_apply);
