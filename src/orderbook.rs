@@ -67,4 +67,28 @@ impl OrderBook {
             _ => None,
         }
     }
+
+    pub fn mid_price(&self) -> Option<Decimal> {
+        match (self.best_bid(), self.best_ask()) {
+            (Some((bid, _)), Some((ask, _))) => Some((ask + bid) / Decimal::from(2)),
+            _ => None,
+        }
+    }
+
+    pub fn top_n_depth(&self, n: usize) -> (Vec<(Decimal, Decimal)>, Vec<(Decimal, Decimal)>) {
+        let best_n_bids: Vec<(Decimal, Decimal)> = self.bids
+            .iter()
+            .rev()
+            .take(n)
+            .map(|(price, qty)| (*price, *qty))
+            .collect();
+
+        let best_n_asks: Vec<(Decimal, Decimal)> = self.asks
+            .iter()
+            .take(n)
+            .map(|(price, qty)| (*price, *qty))
+            .collect();
+
+        (best_n_bids, best_n_asks)
+    }
 }
