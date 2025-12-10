@@ -44,7 +44,8 @@ async fn main() -> Result<()>{
     }
     
 
-    println!("{:?}", book);
+    
+    println!("{:?}", book.top_n_depth(2));
     
     
     Ok(())
