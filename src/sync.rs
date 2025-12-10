@@ -1,4 +1,3 @@
-use anyhow::{Result, bail};
 use crate::binance::DepthUpdate;
 
 pub struct SyncState {
@@ -7,7 +6,14 @@ pub struct SyncState {
 }
 
 
+pub enum SyncOutcome {
+    Updates(Vec<DepthUpdate>),
+    NoUpdates,
+    GapBetweenUpdates,
+}
+
 impl SyncState {
+    
     pub fn new() -> Self {
         Self {
             last_update_id: None,
@@ -20,15 +26,17 @@ impl SyncState {
     }
 
     // returns list of updates to apply
-    pub fn process_delta(&mut self, update: DepthUpdate) -> Result<Option<Vec<DepthUpdate>>> {
+    pub fn process_delta(&mut self, update: DepthUpdate) -> SyncOutcome {
+
+        
         let Some(last_id) = self.last_update_id else {
             self.buffer.push(update);
-            return Ok(None);
+            return SyncOutcome::NoUpdates;
         };
 
         // discard if fully old
         if update.final_update_id <= last_id {
-            return Ok(None);
+            return SyncOutcome::NoUpdates;
         }
 
         // collect buffered + current, oldest first
@@ -47,7 +55,7 @@ impl SyncState {
             // require contiguity
             if u.first_update_id > expected {
                 //To handle
-                bail!("Gap between updates! expected {}, got {}", expected, u.first_update_id);
+                return SyncOutcome::GapBetweenUpdates;
             }
             // ok to apply
             to_apply.push(u);
@@ -58,7 +66,7 @@ impl SyncState {
             self.set_last_update_id(last.final_update_id);
         }
 
-        Ok(Some(to_apply))
+        SyncOutcome::Updates(to_apply)
     }
 
     //caller takes ownership of vec, leaving an empty vec in the struct
