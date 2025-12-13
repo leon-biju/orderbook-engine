@@ -2,7 +2,7 @@ use rand::Rng;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct DepthSnapshot {
     #[serde(rename = "lastUpdateId")]
     pub last_update_id: u64,
