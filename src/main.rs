@@ -3,13 +3,10 @@ mod book;
 mod engine;
 
 use anyhow::Result;
-use futures_util::StreamExt;
 use rust_decimal::Decimal;
 use crate::binance::snapshot;
 use crate::book::scaler;
 use crate::engine::engine::MarketDataEngine;
-
-use crate::binance::stream::connect_trade_stream;
 
 
 
@@ -43,8 +40,9 @@ async fn main() -> Result<()> {
             
             let book_arc = state_clone.current_book.load();
             let is_syncing = *state_clone.is_syncing.read().await;
-
-            println!("{:?}", state_clone.recent_trades.load().len());
+            
+            let metrics = state_clone.metrics.load();
+            println!("volume: {}, trade_count: {}, vwap: {:?} last Updated: {:?}", metrics.volume_1m, metrics.volume_1m, metrics.vwap_1m, metrics.last_update_time);
             if is_syncing {
                 println!("Status: Syncing...");
             } else {
