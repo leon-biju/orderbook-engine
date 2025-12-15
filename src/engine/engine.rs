@@ -93,6 +93,7 @@ impl MarketDataEngine {
                 for update in updates {
                     self.book.apply_update(&update, &self.scaler);
                 }
+                // the ole switcheroo
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
             }
@@ -123,6 +124,8 @@ impl MarketDataEngine {
                         break;
                     }
                 }
+
+                //todo: add trade data receiving here
                 
                 Some(result) = ws_stream.next() => {
                     match result {

@@ -1,6 +1,9 @@
 use arc_swap::ArcSwap;
 use crate::book::orderbook::OrderBook;
 
+// This struct is all the tui will see
+// Anything the tui needs goes here
+
 pub struct MarketState {
     // atomic pointer to the current, immutable OrderBook snapshot.
     // TUI can read this instantly and lock-free.
