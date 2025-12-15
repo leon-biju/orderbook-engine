@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque};
 
 use arc_swap::ArcSwap;
 use crate::{binance::types::Trade, book::orderbook::OrderBook, engine::metrics::MarketMetrics};
