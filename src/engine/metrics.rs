@@ -27,7 +27,7 @@ pub struct MarketMetrics {
 
 
 impl MarketMetrics {
-    pub fn compute(book: &OrderBook, recent_trades: &VecDeque<Trade>, scaler: &Scaler, is_syncing: bool) -> Self {
+    pub fn compute(book: &OrderBook, recent_trades: &VecDeque<Trade>, scaler: &Scaler, is_syncing: bool, updates_per_second: f64) -> Self {
         let best_bid: Option<Decimal> = book.best_bid()
             .map(|(price, _)| scaler.ticks_to_price(*price));
         let best_ask: Option<Decimal> = book.best_ask()
@@ -88,7 +88,7 @@ impl MarketMetrics {
             trade_count_1m,
             vwap_1m,
             last_update_time: std::time::Instant::now(),
-            updates_per_second: 0.0, //todo: track in engine,
+            updates_per_second,
             is_syncing
         }
 
