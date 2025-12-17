@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
+use tokio::time::error::Elapsed;
 
 use crate::binance::types::{DepthSnapshot, Trade};
 use crate::binance::{snapshot, stream};
@@ -28,6 +29,10 @@ pub struct MarketDataEngine {
 
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
+
+    last_update_time: std::time::Instant,
+    updates_per_second: f64,
+
 }
 
 impl MarketDataEngine {
@@ -48,6 +53,8 @@ impl MarketDataEngine {
             recent_trades: VecDeque::new(),
             command_tx: command_tx.clone(),
             command_rx,
+            last_update_time: std::time::Instant::now(),
+            updates_per_second: 0.0,
         };
         
         (engine, command_tx, state) 
@@ -70,6 +77,18 @@ impl MarketDataEngine {
     }
 
     fn update_metrics(&mut self) {
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.last_update_time).as_secs_f64();
+
+
+        if elapsed > 0.0 {
+            //use exponential moving average for smoothing (alpha = 0.1)
+            let instant_rate = 1.0 / elapsed;
+            self.updates_per_second = 0.9 * self.updates_per_second + 0.1 * instant_rate;
+        }
+
+        self.last_update_time = now;
+
         let is_syncing = self.state.is_syncing.try_read()
             .map(|guard| *guard)
             .unwrap_or(true);
@@ -78,7 +97,8 @@ impl MarketDataEngine {
             &self.book,
             &self.recent_trades,
             &self.scaler,
-            is_syncing
+            is_syncing,
+            self.updates_per_second,
         );
         
         self.state.metrics.store(Arc::new(metrics));
