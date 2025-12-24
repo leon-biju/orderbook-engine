@@ -126,8 +126,8 @@ fn render_main(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(60),
-            Constraint::Percentage(40),
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
         ])
         .split(area);
     
@@ -247,37 +247,83 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
 }
 
 fn render_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .split(area);
+    
+    // Left panel: Orderbook Metrics
+    render_orderbook_metrics(frame, chunks[0], state);
+    
+    // Right panel: Trade Flow Metrics
+    render_trade_metrics(frame, chunks[1], state);
+}
+
+fn render_orderbook_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     let metrics = state.metrics.load();
     
     let line1 = Line::from(vec![
-        Span::raw("Mid: "),
-        Span::styled(format_opt_decimal(metrics.mid_price, 3), Style::default().fg(Color::Cyan)),
-        Span::raw(" | Spread: "),
-        Span::raw(format_opt_decimal(metrics.spread, 3)),
-        Span::raw(" | VWAP: "),
-        Span::raw(format_opt_decimal(metrics.vwap_1m, 3)),
-        Span::raw(" | Imbalance: "),
-        Span::raw(format_opt_decimal(metrics.imbalance_ratio, 3)),
-        Span::raw(" | Vol: "),
-        Span::raw(metrics.volume_1m.to_string()),
+        Span::raw("Mid Price:     "),
+        Span::styled(format_opt_decimal(metrics.mid_price, 3), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
     ]);
+    
+    let line2 = Line::from(vec![
+        Span::raw("Spread:        "),
+        Span::styled(format_opt_decimal(metrics.spread, 3), Style::default().fg(Color::Yellow)),
+    ]);
+    
+    let line3 = Line::from(vec![
+        Span::raw("Imbalance:     "),
+        Span::raw(format_opt_decimal(metrics.imbalance_ratio, 3)),
+    ]);
+    
+    let paragraph = Paragraph::new(vec![line1, line2, line3])
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title("Orderbook Metrics"));
+    
+    frame.render_widget(paragraph, area);
+}
+
+fn render_trade_metrics(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
+    let metrics = state.metrics.load();
     
     let buy_percent = metrics.buy_ratio_1m
         .map(|a| (a * 100.0).round() as u32);
     let sell_percent = buy_percent
         .map(|a| 100 - a);
 
-    let line2 = Line::from(vec![
-        Span::raw("Trades/s: "),
-        Span::raw(format!("{:.1}", metrics.updates_per_second)),
-        Span::raw(format!(" | Buy %: {}% | Sell %: {}%", format_opt_int(buy_percent), format_opt_int(sell_percent))),
-        Span::raw(" | Last depth update: "),
-        Span::raw(format_opt_int(metrics.orderbook_lag_ms)),
-        Span::raw("ms ago"),
+
+    
+    let line1 = Line::from(vec![
+        Span::raw("Volume (1m):   "),
+        Span::styled(metrics.volume_1m.to_string(), Style::default().fg(Color::Cyan)),
+        Span::raw("  |  VWAP: "),
+        Span::raw(format_opt_decimal(metrics.vwap_1m, 3)),
     ]);
     
-    let paragraph = Paragraph::new(vec![line1, line2])
-        .block(Block::default().borders(Borders::ALL).title("Market Metrics (1m window)"));
+
+    let line2 = Line::from(vec![
+        Span::raw("Trades/s:      "),
+        Span::raw(format!("{:.1}", metrics.updates_per_second)),
+        Span::raw("  |  Total Count: "),
+        Span::raw(metrics.total_trades.to_string()),
+    ]);
+    
+    let line3 = Line::from(vec![
+        Span::raw("Buy/Sell:      "),
+        Span::styled(format!("{}%", format_opt_int(buy_percent)), Style::default().fg(Color::Green)),
+        Span::raw(" / "),
+        Span::styled(format!("{}%", format_opt_int(sell_percent)), Style::default().fg(Color::Red)),
+    ]);
+    
+    let paragraph = Paragraph::new(vec![line1, line2, line3])
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title("Trade Flow Metrics (Past 1 minute)"));
     
     frame.render_widget(paragraph, area);
 }
