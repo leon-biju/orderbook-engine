@@ -59,26 +59,19 @@ impl MarketMetrics {
             .unwrap()
             .as_millis() as u64;
         
-        let one_minute_ago = now_ms - 60_000; // 60 seconds in milliseconds
-        
-        let mut volume_1m = Decimal::ZERO;
-        let mut trade_count_1m = 0;
-        let mut volume_price_sum = Decimal::ZERO;
+        let trade_count_1m = recent_trades.iter().count() as u64;
 
-        let mut buy_count_1m: u32 = 0;
-        
-        // BUG: if there have been more than MAX_TRADES trades in the past minute then it will be inaccurate!
-        for trade in recent_trades.iter().rev() {
-            if trade.event_time < one_minute_ago {
-                break;
-            }
-            volume_1m += trade.quantity;
-            volume_price_sum += trade.quantity * trade.price;
-            trade_count_1m += 1;
-            if !trade.is_buyer_maker {
-                buy_count_1m += 1
-            }
-        }
+        let volume_1m = recent_trades.iter()
+            .map(|t| t.quantity)
+            .sum();
+
+        let volume_price_sum_1m: Decimal = recent_trades.iter()
+            .map(|t| t.quantity * t.price)
+            .sum();
+
+        let buy_count_1m = recent_trades.iter()
+            .filter(|t| !t.is_buyer_maker)
+            .count() as u64;
         
         let buy_ratio_1m = if trade_count_1m > 0 {
             Some(buy_count_1m as f64 / trade_count_1m as f64)
@@ -87,7 +80,7 @@ impl MarketMetrics {
         };
         
         let vwap_1m = if volume_1m > Decimal::ZERO {
-            Some(volume_price_sum / volume_1m)
+            Some(volume_price_sum_1m / volume_1m)
         } else {
             None
         };

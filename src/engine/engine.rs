@@ -13,7 +13,7 @@ use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::MarketState;
 
 // max trades that can be stored
-pub const MAX_TRADES: usize = 1000;
+pub const INITIAL_STARTING_CAPACITY: usize = 1000;
 
 pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
@@ -57,7 +57,7 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            recent_trades: VecDeque::with_capacity(MAX_TRADES),
+            recent_trades: VecDeque::with_capacity(INITIAL_STARTING_CAPACITY),
             command_tx: command_tx.clone(),
             command_rx,
             update_counter: 0,
@@ -140,12 +140,20 @@ impl MarketDataEngine {
 
     async fn handle_ws_trade(&mut self, trade: Trade) {
         self.total_trades += 1;
-        
         self.last_trade_event_time = Some(trade.event_time);
 
+
+        let cutoff_time = trade.event_time.saturating_sub(60_000); // anything older than this is stale and will be removed
+        
         self.recent_trades.push_back(trade);
-        if self.recent_trades.len() > MAX_TRADES {
-            self.recent_trades.pop_front();
+        
+        // Remove trades older than 1 minute (60000 milliseconds)
+        while let Some(oldest) = self.recent_trades.front() {
+            if oldest.event_time < cutoff_time {
+                self.recent_trades.pop_front();
+            } else {
+                break;
+            }
         }
         
         //the ole switcheroo
