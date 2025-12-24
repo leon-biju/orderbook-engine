@@ -10,13 +10,14 @@ pub struct MarketMetrics {
     pub mid_price: Option<Decimal>,
     pub imbalance_ratio: Option<Decimal>,
 
-    // Trade metrics (todo)
+    // Trade metrics
     pub last_price: Option<Decimal>,
     pub last_qty: Option<Decimal>,
     pub volume_1m: Decimal,
     pub trade_count_1m: u64,
     pub buy_ratio_1m: Option<f64>,
     pub vwap_1m: Option<Decimal>,
+    pub total_trades: u64,
 
     // System metrics
     pub updates_per_second: f64,
@@ -35,6 +36,7 @@ impl MarketMetrics {
         updates_per_second: f64,
         last_update_event_time: Option<u64>,
         last_trade_event_time: Option<u64>,
+        total_trades: u64,
     ) -> Self {
 
         let spread = book.spread()
@@ -65,9 +67,10 @@ impl MarketMetrics {
 
         let mut buy_count_1m: u32 = 0;
         
+        // BUG: if there have been more than MAX_TRADES trades in the past minute then it will be inaccurate!
         for trade in recent_trades.iter().rev() {
             if trade.event_time < one_minute_ago {
-                break; // trades are ordered chronologically
+                break;
             }
             volume_1m += trade.quantity;
             volume_price_sum += trade.quantity * trade.price;
@@ -105,6 +108,7 @@ impl MarketMetrics {
             last_qty,
             volume_1m,
             trade_count_1m,
+            total_trades,
             buy_ratio_1m,
             vwap_1m,
             updates_per_second,
