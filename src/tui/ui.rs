@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
-use crate::{engine::state::MarketState, tui::app};
+use crate::{binance::types::Trade, engine::state::MarketState, tui::app};
 
 pub fn render(frame: &mut Frame, app_data: &super::App) {
     let chunks = Layout::default()
@@ -234,8 +234,10 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     lines.push(Line::from(vec![
         Span::styled("Last Trade", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
     ]));
+
+    let last_trade = recent_trades.iter().last();
     
-    if let (Some(price), Some(qty)) = (metrics.last_price, metrics.last_qty) {
+    if let Some(trade) = last_trade {
         let side = recent_trades.back().map(|t| t.side()).unwrap_or(crate::binance::types::Side::Buy);
         let (side_text, side_color) = match side {
             crate::binance::types::Side::Buy => ("BUY ", Color::Green),
@@ -245,10 +247,10 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
         lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
-            Span::raw("  "),
-            Span::styled(format!("{}", price), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(" "),
+            Span::styled(format!("{}", trade.price), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
-            Span::raw(format!("{}", qty)),
+            Span::raw(format!("{}", trade.quantity)),
         ]));
     } else {
         lines.push(Line::from(vec![
@@ -261,8 +263,8 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, state: &Arc<MarketState>) {
     // Get the most recent trades that fit in available space
     let trades_to_display = recent_trades.len().min(available_lines);
     
-    // Display trades from newest to oldest so most recent appears at top
-    for trade in recent_trades.iter().rev().take(trades_to_display) {
+    // Display trades from newest to oldest, skipping the most recent one (already shown above)
+    for trade in recent_trades.iter().rev().skip(1).take(trades_to_display) {
         let (side_text, side_color) = match trade.side() {
             crate::binance::types::Side::Buy => ("BUY ", Color::Green),
             crate::binance::types::Side::Sell => ("SELL", Color::Red),
