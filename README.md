@@ -8,6 +8,7 @@ A high-performance L2 orderbook built in Rust. It ingests Binance depth snapshot
  - Handles gaps between updates and applies them in order
  - Constant time top-of-book queries
  - Non-blocking snapshot recovery
+ - Precise latency tracking (timestamps captured pre-parse)
  - Fully benchmarked using Criterion
 
 ---
@@ -60,3 +61,8 @@ Ran benchmarks with Criterion in release mode to see how well it scales.
 
 - **Top-of-book queries (best bid/ask, spread, mid-price):** ~29 ns  
     Constant-time. No meaningful variation between runs.
+
+## Latency Notes
+
+Network latency is the main bottleneck when running with Binance WebSocket streams. Since they are hosted from Tokyo. 
+For UK-based deployments, expect ~100-250ms network lag. We will consider LMAX for lower latency in Europe.
