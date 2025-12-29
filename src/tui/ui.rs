@@ -45,19 +45,30 @@ fn render_header(
 
     let format_symbol = Span::styled(&state.symbol, Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
 
-    let format_lag = |lag_ms: Option<u64>| -> Span {
-        match lag_ms {
-            Some(ms) if ms < 50 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Green)),
-            Some(ms) if ms < 200 => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Yellow)),
-            Some(ms) => Span::styled(format!("{}ms", ms), Style::default().fg(Color::Red)),
-            None => Span::styled("--", Style::default().fg(Color::DarkGray)),
-        }
-    };
-
-    let format_net_lag = |lag_ms: Option<u64>| -> Span {
-        match lag_ms {
-            Some(ms) => Span::styled(format!("(net: {}ms)", ms), Style::default().fg(Color::DarkGray)),
-            None => Span::raw(""),
+    let format_lag = |net_lag_ms: Option<u64>, total_lag_ms: Option<u64>| -> Span {
+        match (net_lag_ms, total_lag_ms) {
+            (Some(net), Some(total)) => {
+                let color = if total < 50 {
+                    Color::Green
+                } else if total < 200 {
+                    Color::Yellow
+                } else {
+                    Color::Red
+                };
+                Span::styled(format!("{}/{} ms", net, total), Style::default().fg(color))
+            }
+            (None, Some(total)) => {
+                let color = if total < 50 {
+                    Color::Green
+                } else if total < 200 {
+                    Color::Yellow
+                } else {
+                    Color::Red
+                };
+                Span::styled(format!("--/{} ms", total), Style::default().fg(color))
+            }
+            (Some(net), None) => Span::styled(format!("{}/-- ms", net), Style::default().fg(Color::DarkGray)),
+            (None, None) => Span::styled("--/-- ms", Style::default().fg(Color::DarkGray)),
         }
     };
 
@@ -67,15 +78,11 @@ fn render_header(
             Span::raw(" | "),
             status,
             Span::raw(" | "),
-            Span::raw("Book: "),
-            format_lag(metrics.orderbook_lag_ms),
-            Span::raw(" "),
-            format_net_lag(metrics.orderbook_network_lag_ms),
+            Span::raw("Book (net/total): "),
+            format_lag(metrics.orderbook_network_lag_ms, metrics.orderbook_lag_ms),
             Span::raw(" | "),
-            Span::raw("Trade: "),
-            format_lag(metrics.trade_lag_ms),
-            Span::raw(" "),
-            format_net_lag(metrics.trade_network_lag_ms),
+            Span::raw("Trade (net/total): "),
+            format_lag(metrics.trade_network_lag_ms, metrics.trade_lag_ms),
             Span::raw(" | "),
             Span::raw(format!("{:.0}/s", metrics.updates_per_second)),
         ]),
