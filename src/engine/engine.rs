@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time;
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
@@ -18,12 +19,6 @@ pub enum EngineCommand {
     NewSnapshot(DepthSnapshot),
     RequestSnapshot,
     Shutdown,
-}
-
-enum MetricsUpdate {
-    BookOnly { event_time: u64 },
-    TradeOnly { event_time: u64 },
-    Both { book_event_time: u64, trade_event_time: u64 },
 }
 
 pub struct MarketDataEngine {
@@ -84,7 +79,9 @@ impl MarketDataEngine {
         tokio::spawn(async move {
             match snapshot::fetch_snapshot(&symbol, 1000).await {
                 Ok(snapshot) => {
-                    let _ = tx.send(EngineCommand::NewSnapshot(snapshot)).await;
+                    if tx.send(EngineCommand::NewSnapshot(snapshot)).await.is_err() {
+                        tracing::error!("Failed to send snapshot to engine - channel closed")
+                    };
                 }
                 Err(e) => {
                     tracing::error!("Fatal error, failed to fetch snapshot: {}", e);
@@ -93,8 +90,7 @@ impl MarketDataEngine {
         });
     }
 
-    //todo: remove the godforsaken MetricsUpdate enum, holy code clutter btw
-    fn update_metrics(&mut self, update_type: MetricsUpdate, received_at: std::time::Instant) {
+    fn update_metrics(&mut self, is_trade: bool, event_time: u64, received_at: std::time::Instant) {
         self.update_counter += 1;
 
         let now = std::time::Instant::now();
@@ -107,19 +103,14 @@ impl MarketDataEngine {
         }
             
         if let Ok(mut metrics) = self.state.metrics.try_write() {
-            match update_type {
-                MetricsUpdate::BookOnly { event_time } => {
-                    metrics.compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
-                }
-                MetricsUpdate::TradeOnly { event_time } => {
-                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time, received_at);
-                }
-                MetricsUpdate::Both { book_event_time, trade_event_time } => {
-                    metrics.compute_book_metrics(&self.book, &self.scaler, book_event_time, received_at);
-                    metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, trade_event_time, received_at);
-                }
+            if is_trade {
+                metrics.compute_trade_metrics(&self.recent_trades, self.total_trades, event_time, received_at);
+            } else {
+                metrics.compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
             }
             metrics.update_performance_metrics(self.updates_per_second);
+        } else {
+            tracing::trace!("Metrics lock contention, skipping update");
         }
     }
 
@@ -127,17 +118,13 @@ impl MarketDataEngine {
         match cmd {
             EngineCommand::NewSnapshot(snapshot) => {
                 tracing::info!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
+
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler);
+
                 self.state.current_book.store(Arc::new(self.book.clone()));
                 *self.state.is_syncing.write().await = false;
-                
-                // Update both metrics if we have both event times
-                if let (Some(book_event_time), Some(trade_event_time)) = 
-                    (self.last_update_event_time, self.last_trade_event_time) {
-                    self.update_metrics(MetricsUpdate::Both { book_event_time, trade_event_time }, std::time::Instant::now());
-                }
-                
+
                 Ok(false)
             }
             EngineCommand::RequestSnapshot => {
@@ -152,7 +139,7 @@ impl MarketDataEngine {
         }
     }
 
-    async fn handle_ws_trade(&mut self, received: ReceivedTrade) {
+    fn handle_ws_trade(&mut self, received: ReceivedTrade) {
         self.total_trades += 1;
         let event_time = received.trade.trade_time;
         let received_at = received.received_at;
@@ -171,7 +158,7 @@ impl MarketDataEngine {
         }
         
         self.state.recent_trades.store(Arc::new(self.recent_trades.clone()));
-        self.update_metrics(MetricsUpdate::TradeOnly { event_time }, received_at);
+        self.update_metrics(true, event_time, received_at);
     }
 
     async fn handle_ws_update(&mut self, received: ReceivedDepthUpdate) -> Result<()> {
@@ -195,7 +182,7 @@ impl MarketDataEngine {
             SyncOutcome::NoUpdates => {}
         }
 
-        self.update_metrics(MetricsUpdate::BookOnly { event_time }, received_at);
+        self.update_metrics(false, event_time, received_at);
 
         Ok(())
     }
@@ -223,7 +210,7 @@ impl MarketDataEngine {
 
                 Some(result) = trade_stream.next() => {
                     match result {
-                        Ok(trade) => self.handle_ws_trade(trade).await,
+                        Ok(trade) => self.handle_ws_trade(trade),
                         Err(e) => {
                             tracing::error!("Trade websocket stream error: {}", e);
                             break;
