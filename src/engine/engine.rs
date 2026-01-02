@@ -4,6 +4,7 @@ use std::time::{self, Duration};
 use tokio::sync::mpsc;
 use anyhow::Result;
 use futures_util::StreamExt;
+use num_traits::ToPrimitive;
 
 use crate::binance::types::{DepthSnapshot, Trade, ReceivedTrade, ReceivedDepthUpdate};
 use crate::binance::{snapshot, stream};
@@ -24,6 +25,7 @@ pub struct MarketDataEngine {
     pub state: Arc<MarketState>,
     metrics: MarketMetrics,
     recent_trades: VecDeque<Trade>,
+    significant_trades: VecDeque<Trade>,
 
     conf: Arc<config::Config>,
     
@@ -63,6 +65,7 @@ impl MarketDataEngine {
             state: state.clone(),
             metrics: MarketMetrics::new(conf.imbalance_depth_levels),
             recent_trades: VecDeque::with_capacity(conf.initial_starting_capacity),
+            significant_trades: VecDeque::with_capacity(conf.significant_trades_display_count),
 
             conf,
 
@@ -90,6 +93,7 @@ impl MarketDataEngine {
             book: self.book.clone(),
             metrics: self.metrics.clone(),
             recent_trades: self.recent_trades.clone(),
+            significant_trades: self.significant_trades.clone(),
             is_syncing: self.is_syncing,
         };
 
@@ -135,7 +139,7 @@ impl MarketDataEngine {
         let received_at = received.received_at;
         let cutoff_time = event_time.saturating_sub(60_000);
         
-        self.recent_trades.push_back(received.trade);
+        self.recent_trades.push_back(received.trade.clone());
         
         while let Some(oldest) = self.recent_trades.front() {
             if oldest.trade_time < cutoff_time {
@@ -144,7 +148,29 @@ impl MarketDataEngine {
                 break;
             }
         }
-        
+
+        //might move to different function!
+        //detect significant trade!
+        let one_min_volume: f64 = self.recent_trades.iter()
+            .map(|t| t.quantity.to_f64().unwrap_or(0.0))
+            .sum();
+
+        let trade_qty = received.trade.quantity.to_f64().unwrap_or(0.0);
+
+        if one_min_volume > 0.0 && trade_qty / one_min_volume >= self.conf.significant_trade_volume_pct {
+            self.significant_trades.push_back(received.trade);
+
+            let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
+            while let Some(oldest) = self.significant_trades.front() {
+                if oldest.trade_time < cutoff {
+                    self.significant_trades.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+
+
         //update metrics in place
         self.metrics.compute_trade_metrics(
             &self.recent_trades,
