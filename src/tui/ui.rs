@@ -266,6 +266,35 @@ fn render_trade_flow(frame: &mut Frame, area: Rect, snapshot: &MarketSnapshot) {
         ]));
     }
     
+    // Significant trades section
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("Significant Trades", Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+    ]));
+
+    let significant_trades = &snapshot.significant_trades;
+    if significant_trades.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  No significant trades"),
+        ]));
+    } else {
+        for trade in significant_trades.iter().rev().take(5) {
+            let (side_text, side_color) = match trade.side() {
+                crate::binance::types::Side::Buy => ("BUY ", Color::Green),
+                crate::binance::types::Side::Sell => ("SELL", Color::Red),
+            };
+            
+            lines.push(Line::from(vec![
+                Span::raw("  "),
+                Span::styled(side_text, Style::default().fg(side_color).add_modifier(Modifier::BOLD)),
+                Span::raw(" "),
+                Span::styled(format!("{:>10}", trade.price), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+                Span::raw("  │  "),
+                Span::styled(format!("{:>10}", trade.quantity), Style::default().add_modifier(Modifier::BOLD)),
+            ]));
+        }
+    }
+
     // Add separator and total trades at bottom
     lines.push(Line::from(""));
     lines.push(Line::from(vec![

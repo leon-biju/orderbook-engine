@@ -9,6 +9,7 @@ pub struct MarketSnapshot {
     pub book: OrderBook,
     pub metrics: MarketMetrics,
     pub recent_trades: VecDeque<Trade>,
+    pub significant_trades: VecDeque<Trade>,
     pub is_syncing: bool
 }
 
@@ -42,6 +43,7 @@ impl MarketState {
             book: initial_book,
             metrics: MarketMetrics::default(),
             recent_trades: VecDeque::new(),
+            significant_trades: VecDeque::new(),
             is_syncing: true,
         };
 
