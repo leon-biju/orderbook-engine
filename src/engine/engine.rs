@@ -131,6 +131,46 @@ impl MarketDataEngine {
         }
     }
 
+    fn detect_significant_trade(&mut self, trade: &Trade, event_time: u64) {
+        let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
+        let notional_value = trade.price * trade.quantity;
+        let mut reason: Option<SignificanceReason> = None;
+
+        // Check high volume percentage (requires baseline trades)
+        if reason.is_none()
+            && self.recent_trades.len() >= self.conf.min_trades_for_significance
+        {
+            let one_min_volume: f64 = self.recent_trades.iter()
+                .map(|t| t.quantity.to_f64().unwrap_or(0.0))
+                .sum();
+
+            if one_min_volume > 0.0 {
+                let volume_ratio = trade_qty / one_min_volume;
+                if volume_ratio >= self.conf.significant_trade_volume_pct {
+                    reason = Some(SignificanceReason::HighVolumePercent(volume_ratio * 100.0));
+                }
+            }
+        }
+
+        if let Some(significance_reason) = reason {
+            self.significant_trades.push_back(SignificantTrade::new(
+                trade.clone(),
+                notional_value,
+                significance_reason,
+            ));
+
+            // Prune old significant trades
+            let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
+            while let Some(oldest) = self.significant_trades.front() {
+                if oldest.trade.trade_time < cutoff {
+                    self.significant_trades.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
     fn handle_ws_trade(&mut self, received: ReceivedTrade) {
         self.total_trades += 1;
         self.update_rate_counter();
@@ -149,35 +189,7 @@ impl MarketDataEngine {
             }
         }
 
-        //might move to different function!
-        //detect significant trade!
-        let one_min_volume: f64 = self.recent_trades.iter()
-            .map(|t| t.quantity.to_f64().unwrap_or(0.0))
-            .sum();
-
-        let trade_qty = received.trade.quantity.to_f64().unwrap_or(0.0);
-        let notional_value = received.trade.price * received.trade.quantity;
-
-        if self.recent_trades.len() >= self.conf.min_trades_for_significance
-            && one_min_volume > 0.0
-            && trade_qty / one_min_volume >= self.conf.significant_trade_volume_pct
-        {
-            let volume_pct = (trade_qty / one_min_volume) * 100.0;
-            self.significant_trades.push_back(SignificantTrade::new(
-                received.trade.clone(), 
-                notional_value,
-                SignificanceReason::HighVolumePercent(volume_pct)
-            ));
-
-            let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
-            while let Some(oldest) = self.significant_trades.front() {
-                if oldest.trade.trade_time < cutoff {
-                    self.significant_trades.pop_front();
-                } else {
-                    break;
-                }
-            }
-        }
+        self.detect_significant_trade(&received.trade, event_time);
 
 
         //update metrics in place
@@ -316,7 +328,7 @@ impl MarketDataEngine {
 
         loop {
             tokio::select! {
-                biased;
+                //biased;
                 
                 Some(cmd) = self.command_rx.recv() => {
                     let should_shutdown = self.handle_command(cmd).await?;
@@ -340,7 +352,7 @@ impl MarketDataEngine {
                         }
                     }
                 }
-                
+
                 Some(result) = depth_stream.next() => {
                     match result {
                         Ok(update) => self.handle_ws_depth_update(update).await?,
