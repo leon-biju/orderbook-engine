@@ -6,7 +6,7 @@ use anyhow::Result;
 use futures_util::StreamExt;
 use num_traits::ToPrimitive;
 
-use crate::binance::types::{DepthSnapshot, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
+use crate::binance::types::{DepthSnapshot, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
 use crate::binance::{snapshot, stream};
 use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
@@ -22,7 +22,7 @@ pub enum EngineCommand {
 }
 
 pub struct MarketDataEngine {
-    pub state: Arc<MarketState>,
+    state: Arc<MarketState>,
     metrics: MarketMetrics,
     recent_trades: VecDeque<Trade>,
     significant_trades: VecDeque<SignificantTrade>,
@@ -134,23 +134,21 @@ impl MarketDataEngine {
     fn detect_significant_trade(&mut self, trade: &Trade, event_time: u64) {
         let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
         let notional_value = trade.price * trade.quantity;
-        let mut reason: Option<SignificanceReason> = None;
 
-        // Check high volume percentage (requires baseline trades)
-        if reason.is_none()
-            && self.recent_trades.len() >= self.conf.min_trades_for_significance
-        {
+        let reason = self.recent_trades.len()
+            .ge(&self.conf.min_trades_for_significance)
+            .then(|| {
             let one_min_volume: f64 = self.recent_trades.iter()
                 .map(|t| t.quantity.to_f64().unwrap_or(0.0))
                 .sum();
+            
+            (one_min_volume > 0.0)
+                .then(|| trade_qty / one_min_volume)
+                .filter(|&ratio| ratio >= self.conf.significant_trade_volume_pct)
+                .map(|ratio| SignificanceReason::HighVolumePercent(ratio * 100.0))
+            })
+            .flatten();
 
-            if one_min_volume > 0.0 {
-                let volume_ratio = trade_qty / one_min_volume;
-                if volume_ratio >= self.conf.significant_trade_volume_pct {
-                    reason = Some(SignificanceReason::HighVolumePercent(volume_ratio * 100.0));
-                }
-            }
-        }
 
         if let Some(significance_reason) = reason {
             self.significant_trades.push_back(SignificantTrade::new(
@@ -316,20 +314,16 @@ impl MarketDataEngine {
         
         tracing::info!("Engine running for symbol: {}", self.symbol);
 
-        let mut depth_stream = Box::pin(self.connect_with_retry(
-            || stream::connect_depth_stream(&symbol),
-            "Depth stream",
+        let mut market_stream = Box::pin(self.connect_with_retry(
+            || stream::connect_market_stream(&symbol),
+            "Market stream",
         ).await?);
 
-        let mut trade_stream = Box::pin(self.connect_with_retry(
-            || stream::connect_trade_stream(&symbol),
-            "Trade stream",
-        ).await?);
+        let stream_timeout = Duration::from_millis(self.conf.message_timeout_ms);
+        let mut last_message_time = tokio::time::Instant::now();
 
         loop {
-            tokio::select! {
-                //biased;
-                
+            tokio::select! {                
                 Some(cmd) = self.command_rx.recv() => {
                     let should_shutdown = self.handle_command(cmd).await?;
                     if should_shutdown {
@@ -337,27 +331,18 @@ impl MarketDataEngine {
                     }
                 }
 
-                Some(result) = trade_stream.next() => {
+                Some(result) = market_stream.next() => {
+                    last_message_time = tokio::time::Instant::now();
+                    
                     match result {
-                        Ok(trade) => self.handle_ws_trade(trade),
-                        Err(e) => {
-                            tracing::error!("Trade websocket stream error: {}", e);
-                            self.is_syncing = true;
-                            self.publish_snapshot();
-                            
-                            trade_stream = Box::pin(self.connect_with_retry(
-                                || stream::connect_trade_stream(&symbol),
-                                "Trade stream",
-                            ).await?);
+                        Ok(event) => {
+                            match event {
+                                MarketEvent::Trade(trade) => self.handle_ws_trade(trade),
+                                MarketEvent::Depth(update) => self.handle_ws_depth_update(update).await?,
+                            }
                         }
-                    }
-                }
-
-                Some(result) = depth_stream.next() => {
-                    match result {
-                        Ok(update) => self.handle_ws_depth_update(update).await?,
                         Err(e) => {
-                            tracing::error!("Depth websocket stream error: {}", e);
+                            tracing::error!("Market websocket stream error: {}", e);
                             self.is_syncing = true;
                             self.publish_snapshot();
                             
@@ -365,12 +350,28 @@ impl MarketDataEngine {
                             self.sync_state = SyncState::new();
                             self.spawn_snapshot_fetch();
                             
-                            depth_stream = Box::pin(self.connect_with_retry(
-                                || stream::connect_depth_stream(&symbol),
-                                "Depth stream",
+                            market_stream = Box::pin(self.connect_with_retry(
+                                || stream::connect_market_stream(&symbol),
+                                "Market stream",
                             ).await?);
                         }
                     }
+                }
+
+                _ = tokio::time::sleep_until(last_message_time + stream_timeout) => {
+                    tracing::warn!("No message received for {:?}, attempting reconnect...", stream_timeout);
+                    self.is_syncing = true;
+                    self.publish_snapshot();
+
+                    self.sync_state = SyncState::new();
+                    self.spawn_snapshot_fetch();
+
+                    market_stream = Box::pin(self.connect_with_retry(
+                        || stream::connect_market_stream(&symbol),
+                        "Market stream",
+                    ).await?);
+
+                    last_message_time = tokio::time::Instant::now();
                 }
                 
                 else => break
