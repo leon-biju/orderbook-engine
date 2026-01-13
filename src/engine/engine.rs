@@ -22,7 +22,7 @@ pub enum EngineCommand {
 }
 
 pub struct MarketDataEngine {
-    pub state: Arc<MarketState>,
+    state: Arc<MarketState>,
     metrics: MarketMetrics,
     recent_trades: VecDeque<Trade>,
     significant_trades: VecDeque<SignificantTrade>,
@@ -134,23 +134,21 @@ impl MarketDataEngine {
     fn detect_significant_trade(&mut self, trade: &Trade, event_time: u64) {
         let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
         let notional_value = trade.price * trade.quantity;
-        let mut reason: Option<SignificanceReason> = None;
 
-        // Check high volume percentage (requires baseline trades)
-        if reason.is_none()
-            && self.recent_trades.len() >= self.conf.min_trades_for_significance
-        {
+        let reason = self.recent_trades.len()
+            .ge(&self.conf.min_trades_for_significance)
+            .then(|| {
             let one_min_volume: f64 = self.recent_trades.iter()
                 .map(|t| t.quantity.to_f64().unwrap_or(0.0))
                 .sum();
+            
+            (one_min_volume > 0.0)
+                .then(|| trade_qty / one_min_volume)
+                .filter(|&ratio| ratio >= self.conf.significant_trade_volume_pct)
+                .map(|ratio| SignificanceReason::HighVolumePercent(ratio * 100.0))
+            })
+            .flatten();
 
-            if one_min_volume > 0.0 {
-                let volume_ratio = trade_qty / one_min_volume;
-                if volume_ratio >= self.conf.significant_trade_volume_pct {
-                    reason = Some(SignificanceReason::HighVolumePercent(volume_ratio * 100.0));
-                }
-            }
-        }
 
         if let Some(significance_reason) = reason {
             self.significant_trades.push_back(SignificantTrade::new(
@@ -321,10 +319,11 @@ impl MarketDataEngine {
             "Market stream",
         ).await?);
 
+        let stream_timeout = Duration::from_millis(self.conf.message_timeout_ms);
+        let mut last_message_time = tokio::time::Instant::now();
+
         loop {
-            tokio::select! {
-                //biased;
-                
+            tokio::select! {                
                 Some(cmd) = self.command_rx.recv() => {
                     let should_shutdown = self.handle_command(cmd).await?;
                     if should_shutdown {
@@ -333,6 +332,8 @@ impl MarketDataEngine {
                 }
 
                 Some(result) = market_stream.next() => {
+                    last_message_time = tokio::time::Instant::now();
+                    
                     match result {
                         Ok(event) => {
                             match event {
@@ -355,6 +356,22 @@ impl MarketDataEngine {
                             ).await?);
                         }
                     }
+                }
+
+                _ = tokio::time::sleep_until(last_message_time + stream_timeout) => {
+                    tracing::warn!("No message received for {:?}, attempting reconnect...", stream_timeout);
+                    self.is_syncing = true;
+                    self.publish_snapshot();
+
+                    self.sync_state = SyncState::new();
+                    self.spawn_snapshot_fetch();
+
+                    market_stream = Box::pin(self.connect_with_retry(
+                        || stream::connect_market_stream(&symbol),
+                        "Market stream",
+                    ).await?);
+
+                    last_message_time = tokio::time::Instant::now();
                 }
                 
                 else => break
