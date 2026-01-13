@@ -16,6 +16,8 @@ max_reconnect_attempts = 10
 initial_backoff_ms = 100
 max_backoff_ms = 30000
 
+message_timeout_ms = 10000
+
 # Display Parameters
 orderbook_depth_display_count = 10
 recent_trades_display_count = 10

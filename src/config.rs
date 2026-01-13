@@ -14,6 +14,7 @@ pub struct Config {
     pub max_reconnect_attempts: u32,
     pub initial_backoff_ms: u64,
     pub max_backoff_ms: u64,
+    pub message_timeout_ms: u64,
 
     pub orderbook_depth_display_count: usize,
     pub recent_trades_display_count: usize,
@@ -35,6 +36,7 @@ impl Default for Config {
             max_reconnect_attempts: 10,
             initial_backoff_ms: 100,
             max_backoff_ms: 30000,
+            message_timeout_ms: 30000,
             
             orderbook_depth_display_count: 5,
             recent_trades_display_count: 10,
