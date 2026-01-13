@@ -13,7 +13,7 @@ pub struct DepthSnapshot {
 
 impl DepthSnapshot {
     // generate fake snapshot for testing
-    pub fn fake_snapshot(n_levels: usize) -> Self {
+    pub fn _fake_snapshot(n_levels: usize) -> Self {
         let mut rng = rand::rng();
         
         // mid price around 50000 (like BTC), tick size 0.01
@@ -67,7 +67,7 @@ pub struct ReceivedDepthUpdate {
 
 impl DepthUpdate {
     // generate fake update for testing
-    pub fn fake_update(last_update_id: u64, n_levels: usize) -> Self {
+    pub fn _fake_update(last_update_id: u64, n_levels: usize) -> Self {
         let mut rng = rand::rng();
         let mut bids = Vec::new();
         let mut asks = Vec::new();
