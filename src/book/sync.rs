@@ -6,7 +6,6 @@ pub struct SyncState {
     buffer: Vec<DepthUpdate>,
 }
 
-
 #[derive(Debug)]
 pub enum SyncOutcome {
     Updates(Vec<DepthUpdate>),
@@ -66,9 +65,7 @@ impl SyncState {
     pub fn drain_buffer(&mut self) -> Vec<DepthUpdate> {
         std::mem::take(&mut self.buffer)
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {

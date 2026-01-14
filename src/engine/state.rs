@@ -1,9 +1,13 @@
-use std::{collections::VecDeque};
-use std::sync::Arc;
+use crate::binance::types::SignificantTrade;
+use crate::{
+    binance::types::Trade,
+    book::{orderbook::OrderBook, scaler::Scaler},
+    engine::metrics::MarketMetrics,
+};
 use arc_swap::ArcSwap;
 use rust_decimal::Decimal;
-use crate::binance::types::SignificantTrade;
-use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}, engine::metrics::MarketMetrics};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MarketSnapshot {
@@ -11,20 +15,26 @@ pub struct MarketSnapshot {
     pub metrics: MarketMetrics,
     pub recent_trades: VecDeque<Trade>,
     pub significant_trades: VecDeque<SignificantTrade>,
-    pub is_syncing: bool
+    pub is_syncing: bool,
 }
 
 pub type DisplayDepthLevel = (Decimal, Decimal);
 
 impl MarketSnapshot {
-    pub fn top_n_depth(&self, n: usize, scaler: &Scaler) -> (Vec<DisplayDepthLevel>, Vec<DisplayDepthLevel>) {
-        let (bids, asks) = self. book.top_n_depth(n);
+    pub fn top_n_depth(
+        &self,
+        n: usize,
+        scaler: &Scaler,
+    ) -> (Vec<DisplayDepthLevel>, Vec<DisplayDepthLevel>) {
+        let (bids, asks) = self.book.top_n_depth(n);
 
-        let bids_decimal: Vec<DisplayDepthLevel> = bids.iter()
+        let bids_decimal: Vec<DisplayDepthLevel> = bids
+            .iter()
             .map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty)))
             .collect();
 
-        let asks_decimal: Vec<DisplayDepthLevel> = asks.iter()
+        let asks_decimal: Vec<DisplayDepthLevel> = asks
+            .iter()
             .map(|(price, qty)| (scaler.ticks_to_price(*price), scaler.ticks_to_qty(*qty)))
             .collect();
 
@@ -57,8 +67,7 @@ impl MarketState {
         }
     }
 
-    pub fn load(&self) -> Arc<MarketSnapshot>{
+    pub fn load(&self) -> Arc<MarketSnapshot> {
         self.snapshot.load_full()
     }
-    
 }

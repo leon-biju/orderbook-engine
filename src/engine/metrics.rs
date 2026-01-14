@@ -1,19 +1,22 @@
+use rust_decimal::Decimal;
 use std::collections::VecDeque;
 use std::time;
-use rust_decimal::Decimal;
 
-use crate::{binance::types::Trade, book::{orderbook::OrderBook, scaler::Scaler}};
+use crate::{
+    binance::types::Trade,
+    book::{orderbook::OrderBook, scaler::Scaler},
+};
 
 fn compute_latencies(event_time: u64, received_at: time::Instant) -> (u64, u64) {
     let now_ms = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64;
-    
+
     let total_lag_ms = now_ms.saturating_sub(event_time);
     let processing_ms = received_at.elapsed().as_millis() as u64;
     let network_lag_ms = total_lag_ms.saturating_sub(processing_ms);
-    
+
     (total_lag_ms, network_lag_ms)
 }
 
@@ -47,11 +50,11 @@ pub struct MarketMetrics {
 
 impl MarketMetrics {
     pub fn new(imbalance_depth_levels: usize) -> Self {
-        Self{
+        Self {
             imbalance_depth_levels,
             ..Default::default()
         }
-    } 
+    }
     // Compute only orderbook-related metrics
     pub fn compute_book_metrics(
         &mut self,
@@ -60,15 +63,17 @@ impl MarketMetrics {
         event_time: u64,
         received_at: std::time::Instant,
     ) {
-        self.spread = book.spread()
+        self.spread = book
+            .spread()
             .map(|spread_ticks| scaler.ticks_to_price(spread_ticks));
 
-        self.mid_price = book.mid_price()
-            .map(|price| scaler.ticks_to_price(price));
+        self.mid_price = book.mid_price().map(|price| scaler.ticks_to_price(price));
 
         // magic 10 value here todo: replace this
-        self.imbalance_ratio = book.imbalance_ratio(self.imbalance_depth_levels).and_then(Decimal::from_f64_retain);
-        
+        self.imbalance_ratio = book
+            .imbalance_ratio(self.imbalance_depth_levels)
+            .and_then(Decimal::from_f64_retain);
+
         let (total_lag, network_lag) = compute_latencies(event_time, received_at);
         self.orderbook_lag_ms = Some(total_lag);
         self.orderbook_network_lag_ms = Some(network_lag);
@@ -84,27 +89,21 @@ impl MarketMetrics {
         let last_trade = recent_trades.back();
         self.last_price = last_trade.map(|t| t.price);
         self.last_qty = last_trade.map(|t| t.quantity);
-        
+
         self.trade_count_1m = recent_trades.iter().count() as u64;
 
-        self.volume_1m = recent_trades.iter()
-            .map(|t| t.quantity)
-            .sum();
+        self.volume_1m = recent_trades.iter().map(|t| t.quantity).sum();
 
-        let volume_price_sum_1m: Decimal = recent_trades.iter()
-            .map(|t| t.quantity * t.price)
-            .sum();
+        let volume_price_sum_1m: Decimal = recent_trades.iter().map(|t| t.quantity * t.price).sum();
 
-        let buy_count_1m = recent_trades.iter()
-            .filter(|t| !t.is_buyer_maker)
-            .count() as u64;
-        
+        let buy_count_1m = recent_trades.iter().filter(|t| !t.is_buyer_maker).count() as u64;
+
         self.buy_ratio_1m = if self.trade_count_1m > 0 {
             Some(buy_count_1m as f64 / self.trade_count_1m as f64)
-        } else { 
+        } else {
             None
         };
-        
+
         self.vwap_1m = if self.volume_1m > Decimal::ZERO {
             Some(volume_price_sum_1m / self.volume_1m)
         } else {
@@ -122,7 +121,6 @@ impl MarketMetrics {
         self.updates_per_second = updates_per_second;
     }
 }
-
 
 impl Default for MarketMetrics {
     fn default() -> Self {
@@ -142,7 +140,7 @@ impl Default for MarketMetrics {
             orderbook_network_lag_ms: None,
             trade_lag_ms: None,
             trade_network_lag_ms: None,
-            imbalance_depth_levels: 10
+            imbalance_depth_levels: 10,
         }
     }
 }

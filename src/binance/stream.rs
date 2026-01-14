@@ -1,12 +1,14 @@
-use anyhow::Result;
-use futures_util::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
 use crate::binance::types::{
     CombinedStreamMessage, DepthUpdate, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, Trade,
 };
+use anyhow::Result;
+use futures_util::StreamExt;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 // connect to a combined stream that delivrs both depth updates and trades
-pub async fn connect_market_stream(symbol: &str) -> Result<impl StreamExt<Item = Result<MarketEvent>>> {
+pub async fn connect_market_stream(
+    symbol: &str,
+) -> Result<impl StreamExt<Item = Result<MarketEvent>>> {
     let symbol_lower = symbol.to_lowercase();
     let url = format!(
         "wss://stream.binance.com:9443/stream?streams={}@depth@100ms/{}@trade",
@@ -34,10 +36,9 @@ pub async fn connect_market_stream(symbol: &str) -> Result<impl StreamExt<Item =
                     }
                 } else if combined.stream.ends_with("@trade") {
                     match serde_json::from_value::<Trade>(combined.data) {
-                        Ok(trade) => Some(Ok(MarketEvent::Trade(ReceivedTrade {
-                            trade,
-                            received_at,
-                        }))),
+                        Ok(trade) => {
+                            Some(Ok(MarketEvent::Trade(ReceivedTrade { trade, received_at })))
+                        }
                         Err(e) => Some(Err(e.into())),
                     }
                 } else {

@@ -1,16 +1,19 @@
+use anyhow::Result;
+use futures_util::StreamExt;
+use num_traits::ToPrimitive;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{self, Duration};
 use tokio::sync::mpsc;
-use anyhow::Result;
-use futures_util::StreamExt;
-use num_traits::ToPrimitive;
 
-use crate::binance::types::{DepthSnapshot, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason, SignificantTrade, Trade};
+use crate::binance::types::{
+    DepthSnapshot, MarketEvent, ReceivedDepthUpdate, ReceivedTrade, SignificanceReason,
+    SignificantTrade, Trade,
+};
 use crate::binance::{snapshot, stream};
-use crate::book::sync::{SyncState, SyncOutcome};
 use crate::book::orderbook::OrderBook;
 use crate::book::scaler::Scaler;
+use crate::book::sync::{SyncOutcome, SyncState};
 use crate::config;
 use crate::engine::metrics::MarketMetrics;
 use crate::engine::state::{MarketSnapshot, MarketState};
@@ -28,22 +31,21 @@ pub struct MarketDataEngine {
     significant_trades: VecDeque<SignificantTrade>,
 
     conf: Arc<config::Config>,
-    
+
     sync_state: SyncState,
     book: OrderBook,
     scaler: Scaler,
     symbol: String,
-    
+
     is_syncing: bool,
 
     command_tx: mpsc::Sender<EngineCommand>,
     command_rx: mpsc::Receiver<EngineCommand>,
 
-    update_counter : u64,
+    update_counter: u64,
     last_rate_calc_time: std::time::Instant,
     updates_per_second: f64,
     total_trades: u64,
-
 }
 
 impl MarketDataEngine {
@@ -51,15 +53,19 @@ impl MarketDataEngine {
         symbol: String,
         initial_snapshot: DepthSnapshot,
         scaler: Scaler,
-        conf: Arc<config::Config>
+        conf: Arc<config::Config>,
     ) -> Result<(Self, mpsc::Sender<EngineCommand>, Arc<MarketState>)> {
         let (command_tx, command_rx) = mpsc::channel(32);
-        
+
         let mut sync_state = SyncState::default();
         sync_state.set_last_update_id(initial_snapshot.last_update_id);
         let book = OrderBook::from_snapshot(initial_snapshot.clone(), &scaler)?;
-        let state = Arc::new(MarketState::new(book.clone(), symbol.clone(), scaler.clone()));
-        
+        let state = Arc::new(MarketState::new(
+            book.clone(),
+            symbol.clone(),
+            scaler.clone(),
+        ));
+
         let engine = MarketDataEngine {
             state: state.clone(),
             metrics: MarketMetrics::new(conf.orderbook_imbalance_depth_levels),
@@ -72,7 +78,7 @@ impl MarketDataEngine {
             book,
             scaler,
             symbol,
-            
+
             is_syncing: true,
 
             command_tx: command_tx.clone(),
@@ -83,7 +89,7 @@ impl MarketDataEngine {
             updates_per_second: 0.0,
             total_trades: 0,
         };
-        
+
         Ok((engine, command_tx, state))
     }
 
@@ -103,7 +109,7 @@ impl MarketDataEngine {
         let symbol = self.symbol.clone();
         let tx = self.command_tx.clone();
         let conf = self.conf.clone();
-        
+
         tokio::spawn(async move {
             match snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await {
                 Ok(snapshot) => {
@@ -134,20 +140,23 @@ impl MarketDataEngine {
         let trade_qty = trade.quantity.to_f64().unwrap_or(0.0);
         let notional_value = trade.price * trade.quantity;
 
-        let reason = self.recent_trades.len()
+        let reason = self
+            .recent_trades
+            .len()
             .ge(&self.conf.min_trades_for_significance)
             .then(|| {
-            let one_min_volume: f64 = self.recent_trades.iter()
-                .map(|t| t.quantity.to_f64().unwrap_or(0.0))
-                .sum();
-            
-            (one_min_volume > 0.0)
-                .then(|| trade_qty / one_min_volume)
-                .filter(|&ratio| ratio >= self.conf.significant_trade_volume_pct)
-                .map(|ratio| SignificanceReason::HighVolumePercent(ratio * 100.0))
+                let one_min_volume: f64 = self
+                    .recent_trades
+                    .iter()
+                    .map(|t| t.quantity.to_f64().unwrap_or(0.0))
+                    .sum();
+
+                (one_min_volume > 0.0)
+                    .then(|| trade_qty / one_min_volume)
+                    .filter(|&ratio| ratio >= self.conf.significant_trade_volume_pct)
+                    .map(|ratio| SignificanceReason::HighVolumePercent(ratio * 100.0))
             })
             .flatten();
-
 
         if let Some(significance_reason) = reason {
             self.significant_trades.push_back(SignificantTrade::new(
@@ -157,7 +166,8 @@ impl MarketDataEngine {
             ));
 
             // Prune old significant trades
-            let cutoff = event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
+            let cutoff =
+                event_time.saturating_sub(self.conf.significant_trades_retention_secs * 1000);
             while let Some(oldest) = self.significant_trades.front() {
                 if oldest.trade.trade_time < cutoff {
                     self.significant_trades.pop_front();
@@ -175,9 +185,9 @@ impl MarketDataEngine {
         let event_time = received.trade.trade_time;
         let received_at = received.received_at;
         let cutoff_time = event_time.saturating_sub(60_000);
-        
+
         self.recent_trades.push_back(received.trade.clone());
-        
+
         while let Some(oldest) = self.recent_trades.front() {
             if oldest.trade_time < cutoff_time {
                 self.recent_trades.pop_front();
@@ -188,15 +198,16 @@ impl MarketDataEngine {
 
         self.detect_significant_trade(&received.trade, event_time);
 
-
         //update metrics in place
         self.metrics.compute_trade_metrics(
             &self.recent_trades,
             self.total_trades,
             event_time,
-            received_at);
+            received_at,
+        );
 
-        self.metrics.update_performance_metrics(self.updates_per_second);
+        self.metrics
+            .update_performance_metrics(self.updates_per_second);
 
         self.publish_snapshot();
     }
@@ -221,12 +232,8 @@ impl MarketDataEngine {
             SyncOutcome::NoUpdates => {}
         }
 
-        self.metrics.compute_book_metrics(
-            &self.book, 
-            &self.scaler,
-            event_time,
-            received_at
-        );
+        self.metrics
+            .compute_book_metrics(&self.book, &self.scaler, event_time, received_at);
 
         self.publish_snapshot();
 
@@ -236,7 +243,10 @@ impl MarketDataEngine {
     async fn handle_command(&mut self, cmd: EngineCommand) -> Result<bool> {
         match cmd {
             EngineCommand::NewSnapshot(snapshot) => {
-                tracing::info!("Received new snapshot, lastUpdateId: {}", snapshot.last_update_id);
+                tracing::info!(
+                    "Received new snapshot, lastUpdateId: {}",
+                    snapshot.last_update_id
+                );
 
                 self.sync_state.set_last_update_id(snapshot.last_update_id);
                 self.book = OrderBook::from_snapshot(snapshot, &self.scaler)?;
@@ -262,11 +272,7 @@ impl MarketDataEngine {
         Duration::from_millis(backoff_ms.min(self.conf.max_backoff_ms))
     }
 
-    async fn connect_with_retry<T, F, Fut>(
-        &self,
-        connect_fn: F,
-        stream_name: &str,
-    ) -> Result<T>
+    async fn connect_with_retry<T, F, Fut>(&self, connect_fn: F, stream_name: &str) -> Result<T>
     where
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
@@ -310,19 +316,19 @@ impl MarketDataEngine {
 
     pub async fn run(mut self) -> Result<()> {
         let symbol = self.symbol.clone();
-        
+
         tracing::info!("Engine running for symbol: {}", self.symbol);
 
-        let mut market_stream = Box::pin(self.connect_with_retry(
-            || stream::connect_market_stream(&symbol),
-            "Market stream",
-        ).await?);
+        let mut market_stream = Box::pin(
+            self.connect_with_retry(|| stream::connect_market_stream(&symbol), "Market stream")
+                .await?,
+        );
 
         let stream_timeout = Duration::from_millis(self.conf.message_timeout_ms);
         let mut last_message_time = tokio::time::Instant::now();
 
         loop {
-            tokio::select! {                
+            tokio::select! {
                 Some(cmd) = self.command_rx.recv() => {
                     let should_shutdown = self.handle_command(cmd).await?;
                     if should_shutdown {
@@ -332,7 +338,7 @@ impl MarketDataEngine {
 
                 Some(result) = market_stream.next() => {
                     last_message_time = tokio::time::Instant::now();
-                    
+
                     match result {
                         Ok(event) => {
                             match event {
@@ -344,11 +350,11 @@ impl MarketDataEngine {
                             tracing::error!("Market websocket stream error: {}", e);
                             self.is_syncing = true;
                             self.publish_snapshot();
-                            
+
                             // reset sync state - we need a fresh snapshot after reconnect
                             self.sync_state = SyncState::default();
                             self.spawn_snapshot_fetch();
-                            
+
                             market_stream = Box::pin(self.connect_with_retry(
                                 || stream::connect_market_stream(&symbol),
                                 "Market stream",
@@ -372,11 +378,11 @@ impl MarketDataEngine {
 
                     last_message_time = tokio::time::Instant::now();
                 }
-                
+
                 else => break
             }
         }
-        
+
         Ok(())
     }
 }
