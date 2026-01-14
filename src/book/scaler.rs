@@ -1,6 +1,6 @@
+use num_traits::ToPrimitive;
 use rust_decimal::Decimal;
 use std::str::FromStr;
-use num_traits::ToPrimitive;
 
 #[derive(Debug, Clone)]
 pub struct Scaler {
@@ -63,22 +63,34 @@ mod tests {
 
     #[test]
     fn converts_price_and_qty_round_trip() {
-        let scaler = Scaler::new(Decimal::from_str("0.01").unwrap(), Decimal::from_str("0.001").unwrap());
+        let scaler = Scaler::new(
+            Decimal::from_str("0.01").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+        );
 
         let price = "1234.56";
         let price_ticks = scaler.price_to_ticks(price).unwrap();
         assert_eq!(price_ticks, 123_456);
-        assert_eq!(scaler.ticks_to_price(price_ticks), Decimal::from_str(price).unwrap());
+        assert_eq!(
+            scaler.ticks_to_price(price_ticks),
+            Decimal::from_str(price).unwrap()
+        );
 
         let qty = "0.123";
         let qty_ticks = scaler.qty_to_ticks(qty).unwrap();
         assert_eq!(qty_ticks, 123);
-        assert_eq!(scaler.ticks_to_qty(qty_ticks), Decimal::from_str(qty).unwrap());
+        assert_eq!(
+            scaler.ticks_to_qty(qty_ticks),
+            Decimal::from_str(qty).unwrap()
+        );
     }
 
     #[test]
     fn rejects_values_not_aligned_to_tick_or_step() {
-        let scaler = Scaler::new(Decimal::from_str("0.01").unwrap(), Decimal::from_str("0.1").unwrap());
+        let scaler = Scaler::new(
+            Decimal::from_str("0.01").unwrap(),
+            Decimal::from_str("0.1").unwrap(),
+        );
 
         // Price 0.015 is 1.5 ticks -> not an integer number of ticks
         assert!(scaler.price_to_ticks("0.015").is_none());

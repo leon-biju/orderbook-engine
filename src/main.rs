@@ -1,15 +1,15 @@
 mod binance;
 mod book;
+mod config;
 mod engine;
 mod tui;
-mod config;
 
 use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::info;
-use tracing_subscriber::{fmt, EnvFilter};
 use tracing_appender::rolling;
+use tracing_subscriber::{EnvFilter, fmt};
 
 use crate::binance::snapshot;
 use crate::book::scaler;
@@ -20,18 +20,16 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let file_appender = rolling::daily("logs", "ingestor.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let filter = EnvFilter::from_default_env()
-        .add_directive("info".parse().unwrap());
+    let filter = EnvFilter::from_default_env().add_directive("info".parse().unwrap());
 
-
-    fmt().with_env_filter(filter)
+    fmt()
+        .with_env_filter(filter)
         .with_writer(non_blocking)
         .with_ansi(false)
         .with_target(false)
         .init();
     guard
 }
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -55,33 +53,36 @@ async fn main() -> Result<()> {
     let conf = Arc::new(config::load_config());
     info!("{:?}", conf);
 
-
     let snapshot = snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await?;
-    info!("[DEPTH SNAPSHOT_INFO] lastUpdateId: {}", snapshot.last_update_id);
-    
+    info!(
+        "[DEPTH SNAPSHOT_INFO] lastUpdateId: {}",
+        snapshot.last_update_id
+    );
+
     let (tick_size, step_size) = binance::exchange_info::fetch_tick_and_step_sizes(&symbol).await?;
     let scaler = scaler::Scaler::new(tick_size, step_size);
 
-    let (engine, command_tx, state) = MarketDataEngine::new(symbol, snapshot, scaler, conf.clone())?;
-    
+    let (engine, command_tx, state) =
+        MarketDataEngine::new(symbol, snapshot, scaler, conf.clone())?;
+
     // Spawn the engine in the background
     let engine_handle = tokio::spawn(async move {
         if let Err(e) = engine.run().await {
             tracing::error!("Engine error: {}", e);
         }
     });
-    
+
     // Run the TUI in the main task
     let mut app = App::new(state, conf);
     app.run().await?;
-    
+
     // TUI exited, engine will continue running until dropped
     command_tx.send(EngineCommand::Shutdown).await?;
 
     if let Err(e) = engine_handle.await {
         tracing::error!("Engine task panicked: {}", e);
     }
-    
+
     info!("[PROGRAM END]");
     Ok(())
 }

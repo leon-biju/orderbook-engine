@@ -1,7 +1,7 @@
-use std::time;
 use rand::Rng;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use std::time;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DepthSnapshot {
@@ -15,11 +15,11 @@ impl DepthSnapshot {
     // generate fake snapshot for testing
     pub fn _fake_snapshot(n_levels: usize) -> Self {
         let mut rng = rand::rng();
-        
+
         // mid price around 50000 (like BTC), tick size 0.01
         let mid_price = Decimal::from(50000);
         let tick_size = Decimal::new(1, 2); // 0.01
-        
+
         let bids = (0..n_levels)
             .map(|i| {
                 // best bid is slightly below mid, then descending by tick size
@@ -45,7 +45,6 @@ impl DepthSnapshot {
         }
     }
 }
-
 
 #[derive(Debug, Deserialize)]
 pub struct DepthUpdate {
@@ -77,8 +76,9 @@ impl DepthUpdate {
 
         for _ in 0..n_levels {
             let is_bid = rng.random_bool(0.5);
-            
-            let price = if rng.random_bool(0.85) { // 85% update existing prices
+
+            let price = if rng.random_bool(0.85) {
+                // 85% update existing prices
                 let offset = rng.random_range(1..1000);
                 if is_bid {
                     mid_price - tick_size * Decimal::from(offset)
@@ -93,14 +93,14 @@ impl DepthUpdate {
                     mid_price + tick_size * Decimal::from(offset)
                 }
             };
-            
+
             // we'll simulate 10% deletions
             let qty = if rng.random_bool(0.1) {
                 "0".to_string() // Level deletion
             } else {
                 Decimal::from(rng.random_range(1..100)).to_string()
             };
-            
+
             if is_bid {
                 bids.push([price.to_string(), qty]);
             } else {
@@ -113,19 +113,18 @@ impl DepthUpdate {
             first_update_id: last_update_id + 1,
             final_update_id: last_update_id + n_levels as u64 - 1,
             b: bids,
-            a: asks
+            a: asks,
         }
     }
 }
 
-
 pub enum Side {
-    Sell, 
+    Sell,
     Buy,
 }
 impl std::fmt::Display for Side {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-         match self {
+        match self {
             Side::Buy => write!(f, "BUY"),
             Side::Sell => write!(f, "SELL"),
         }
@@ -151,7 +150,7 @@ pub struct ReceivedTrade {
 }
 
 impl Trade {
-    pub fn side(&self) -> Side{
+    pub fn side(&self) -> Side {
         if self.is_buyer_maker {
             Side::Sell
         } else {
@@ -159,7 +158,6 @@ impl Trade {
         }
     }
 }
-
 
 // combined stream messages from Binance
 #[derive(Debug, Deserialize)]
@@ -176,7 +174,7 @@ pub enum MarketEvent {
 
 #[derive(Clone, Debug)]
 pub enum SignificanceReason {
-    HighVolumePercent(f64),           // % of 1min volume
+    HighVolumePercent(f64), // % of 1min volume
 }
 
 impl SignificanceReason {
@@ -202,7 +200,7 @@ impl SignificantTrade {
             significance_reason: reason,
         }
     }
-    
+
     pub fn side(&self) -> Side {
         self.trade.side()
     }

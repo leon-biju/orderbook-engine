@@ -1,16 +1,13 @@
-use std::{sync::Arc};
-use std::io;
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
 use crate::config::Config;
 use crate::engine::state::MarketState;
+use crossterm::{
+    ExecutableCommand,
+    event::{self, Event, KeyCode, KeyEventKind},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::io;
+use std::sync::Arc;
 
 pub struct App {
     pub state: Arc<MarketState>,
@@ -22,7 +19,6 @@ pub struct App {
 }
 
 impl App {
-    
     pub fn new(state: Arc<MarketState>, config: Arc<Config>) -> Self {
         Self {
             state,
@@ -45,7 +41,9 @@ impl App {
         // sets up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        stdout.execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+        stdout.execute(crossterm::terminal::Clear(
+            crossterm::terminal::ClearType::All,
+        ))?;
         stdout.execute(EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
@@ -66,12 +64,17 @@ impl App {
         let mut stdout = io::stdout();
         disable_raw_mode()?;
         stdout.execute(LeaveAlternateScreen)?;
-        stdout.execute(crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
+        stdout.execute(crossterm::terminal::Clear(
+            crossterm::terminal::ClearType::All,
+        ))?;
         stdout.execute(crossterm::cursor::Show)?;
         Ok(())
     }
 
-    async fn run_loop<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
+    async fn run_loop<B: ratatui::backend::Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> io::Result<()> {
         loop {
             if !self.frozen {
                 terminal.draw(|f| super::ui::render(f, self))?;
@@ -80,24 +83,24 @@ impl App {
             // Poll for events with timeout
             if event::poll(std::time::Duration::from_millis(self.update_interval_ms))?
                 && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
-                            self.should_quit = true;
-                        }
-                        KeyCode::Char('f') | KeyCode::Char('F') => {
-                            self.frozen = !self.frozen;
-                            terminal.draw(|f| super::ui::render(f, self))?;
-                        }
-                        KeyCode::Up => {
-                            self.update_interval_ms = (self.update_interval_ms + 100).min(2000);
-                        }
-                        KeyCode::Down => {
-                            self.update_interval_ms = (self.update_interval_ms - 100).max(100);
-                        }
-                        _ => {}
+                && key.kind == KeyEventKind::Press
+            {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => {
+                        self.should_quit = true;
                     }
-    
+                    KeyCode::Char('f') | KeyCode::Char('F') => {
+                        self.frozen = !self.frozen;
+                        terminal.draw(|f| super::ui::render(f, self))?;
+                    }
+                    KeyCode::Up => {
+                        self.update_interval_ms = (self.update_interval_ms + 100).min(2000);
+                    }
+                    KeyCode::Down => {
+                        self.update_interval_ms = (self.update_interval_ms - 100).max(100);
+                    }
+                    _ => {}
+                }
             }
 
             if self.should_quit {
