@@ -10,7 +10,7 @@ const LEVELS_PER_UPDATE: usize = 100;
 
 fn bench_from_snapshot(c: &mut Criterion) {
     // simulate a snapshot
-    let snapshot = DepthSnapshot::fake_snapshot(SNAPSHOT_LEVELS);
+    let snapshot = DepthSnapshot::_fake_snapshot(SNAPSHOT_LEVELS);
     let scaler = Scaler::new(
         Decimal::from_str("0.01").unwrap(),
         Decimal::from_str("0.01").unwrap()
@@ -24,14 +24,14 @@ fn bench_from_snapshot(c: &mut Criterion) {
 }
 
 fn bench_apply_updates(c: &mut Criterion) {
-    let snapshot = DepthSnapshot::fake_snapshot(SNAPSHOT_LEVELS);
+    let snapshot = DepthSnapshot::_fake_snapshot(SNAPSHOT_LEVELS);
     let scaler = Scaler::new(
         Decimal::from_str("0.01").unwrap(),
         Decimal::from_str("0.01").unwrap()
     );
 
     let updates: Vec<DepthUpdate> = (0..UPDATES_PER_BATCH)
-        .map(|i| DepthUpdate::fake_update(i as u64, LEVELS_PER_UPDATE))
+        .map(|i| DepthUpdate::_fake_update(i as u64, LEVELS_PER_UPDATE))
         .collect();
 
     c.bench_function(&format!("apply_updates_{}x{}", UPDATES_PER_BATCH, LEVELS_PER_UPDATE), |b| {
@@ -39,7 +39,7 @@ fn bench_apply_updates(c: &mut Criterion) {
         || OrderBook::from_snapshot(snapshot.clone(), &scaler),
         |book| {
             for up in &updates {
-                book.apply_update(black_box(up), &scaler);
+                let _ = book.apply_update(black_box(up), &scaler);
             }
         },
         BatchSize::SmallInput,
@@ -48,7 +48,7 @@ fn bench_apply_updates(c: &mut Criterion) {
 }
 
 fn bench_query_functions(c: &mut Criterion) {
-    let snapshot = DepthSnapshot::fake_snapshot(SNAPSHOT_LEVELS);
+    let snapshot = DepthSnapshot::_fake_snapshot(SNAPSHOT_LEVELS);
     let scaler = Scaler::new(
         Decimal::from_str("0.01").unwrap(),
         Decimal::from_str("0.01").unwrap()
@@ -67,14 +67,14 @@ fn bench_query_functions(c: &mut Criterion) {
 
 fn bench_high_churn(c: &mut Criterion) {
     // Simulate high-frequency trading: many small updates
-    let snapshot = DepthSnapshot::fake_snapshot(SNAPSHOT_LEVELS);
+    let snapshot = DepthSnapshot::_fake_snapshot(SNAPSHOT_LEVELS);
     let scaler = Scaler::new(
         Decimal::from_str("0.01").unwrap(),
         Decimal::from_str("0.01").unwrap()
     );
 
     let updates: Vec<DepthUpdate> = (0..1000)
-        .map(|i| DepthUpdate::fake_update(i as u64, 10)) // small updates
+        .map(|i| DepthUpdate::_fake_update(i as u64, 10)) // small updates
         .collect();
 
     c.bench_function("apply_updates_high_churn_1000x10", |b| {
@@ -82,7 +82,7 @@ fn bench_high_churn(c: &mut Criterion) {
             || OrderBook::from_snapshot(snapshot.clone(), &scaler),
             |book| {
                 for up in &updates {
-                    book.apply_update(black_box(up), &scaler);
+                    let _ = book.apply_update(black_box(up), &scaler);
                 }
             },
             BatchSize::SmallInput,
