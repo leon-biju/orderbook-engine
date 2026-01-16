@@ -40,17 +40,16 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    let symbol = std::env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("Usage: orderbook-engine <symbol>");
-        std::process::exit(1);
-    });
+    let symbol = std::env::args().nth(1).ok_or_else(|| {
+        anyhow::anyhow!("Usage: orderbook-engine <symbol>")
+    })?;
     // Add visual separator in logs
     info!("");
     info!("================================================");
     info!("");
     info!("[PROGRAM START]");
 
-    let conf = Arc::new(config::load_config());
+    let conf = Arc::new(config::load_config()?);
     info!("{:?}", conf);
 
     let snapshot = snapshot::fetch_snapshot(&symbol, conf.orderbook_initial_snapshot_depth).await?;
