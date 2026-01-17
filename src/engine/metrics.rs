@@ -69,7 +69,6 @@ impl MarketMetrics {
 
         self.mid_price = book.mid_price().map(|price| scaler.ticks_to_price(price));
 
-        // magic 10 value here todo: replace this
         self.imbalance_ratio = book
             .imbalance_ratio(self.imbalance_depth_levels)
             .and_then(Decimal::from_f64_retain);
