@@ -48,12 +48,10 @@ impl Default for Config {
 
 pub fn load_config() -> Config {
     match fs::read_to_string("config.toml") {
-        Ok(content) => {
-            toml::from_str(&content).unwrap_or_else(|e| {
-                tracing::warn!("Failed to parse config.toml: {e}, using defaults");
-                Config::default()
-            })
-        }
+        Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
+            tracing::warn!("Failed to parse config.toml: {e}, using defaults");
+            Config::default()
+        }),
         Err(_) => {
             tracing::info!("No config.toml found, using defaults");
             Config::default()

@@ -40,9 +40,9 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    let symbol = std::env::args().nth(1).ok_or_else(|| {
-        anyhow::anyhow!("Usage: binance-market-terminal <symbol>")
-    })?;
+    let symbol = std::env::args()
+        .nth(1)
+        .ok_or_else(|| anyhow::anyhow!("Usage: binance-market-terminal <symbol>"))?;
     // Add visual separator in logs
     info!("");
     info!("================================================");
