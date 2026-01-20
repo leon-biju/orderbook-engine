@@ -1,5 +1,5 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use orderbook_engine::{
+use binance_market_terminal::{
     binance::types::{DepthSnapshot, DepthUpdate},
     book::orderbook::OrderBook,
     book::scaler::Scaler,
